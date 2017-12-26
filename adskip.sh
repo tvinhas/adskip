@@ -5,6 +5,7 @@ log="/config/tmp/tv.log"
 ondeck="/config/tmp/ondeck"
 processing="/config/tmp/processing"
 dvrhome="/dvr"
+comskip="/opt/Comskip/comskip"
 comskipini="/opt/adskip/comskip.ini"
 
 echo "Init log" > $templog
@@ -45,7 +46,7 @@ else
 
                 #generate commercial file
                 echo $(date) "...Running Comskip on $dir" >> $log
-                comskip --output=$dir --ini="$comskipini" "$file" &>> $templog
+                $comskip --output=$dir --ini="$comskipini" "$file" &>> $templog
 
                 let start=i=totalcutduration=0
                 hascommercials=false
