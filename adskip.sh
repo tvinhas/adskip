@@ -1,236 +1,113 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-RAND1=$(( ( RANDOM % 10 )  + 1 ))
-sleep $RAND1
-RAND2=$(( ( RANDOM % 10 )  + 1 ))
-RAND=$(($RAND1 + $RAND2 * $RAND1 * $RAND2 % 10))
+templog="/dvr/tmp/run.log"
+log="/dvr/tmp/tv.log"
+ondeck="/dvr/tmp/ondeck"
+processing="/dvr/tmp/processing"
+dvrhome="/dvr"
+comskipini="/dvr/bin/comskip.ini"
 
-ldPath=${LD_LIBRARY_PATH}
-unset LD_LIBRARY_PATH
+echo "Init log" > $templog
 
-exitcode=0
+echo $(date) "Starting convert run..." >> $log
 
-ffmpegPath="ffmpeg"
-comskipPath="comskip"
-
-if [[ $# -lt 1 ]]; then
-
-  exename=$(basename "$0")
-
-  echo "Remove commercial from video file using EDL file"
-  echo "     (If no EDL file is found, comskip will be used to generate one)"
-  echo ""
-  echo "Usage: $exename infile [outfile]"
-
-  exit 1
-fi
-
-comskipini=/dvr/comskip.ini
-deleteedl=true
-deletemeta=true
-deletelog=true
-deletelogo=true
-deletetxt=true
-lockfile="/dvr/comskip.lock"
-workdir=""
-
-while [[ $# -gt 1 ]]
-do
-key="$1"
-case $key in
-    --keep-edl)
-    deleteedl=false
-    shift
-    ;;
-    --keep-meta)
-    deletemeta=false
-    shift
-    ;;
-    --ffmpeg=*)
-    ffmpegPath="${key#*=}"
-    shift
-    ;;
-    --comskip=*)
-    comskipPath="${key#*=}"
-    shift
-    ;;
-    --comskip-ini=*)
-    comskipini="${key#*=}"
-    shift
-    ;;
-    --lockfile=*)
-    lockfile="${key#*=}"
-    shift
-    ;;
-    --work-dir=*)
-    workdir="${key#*=}"
-    shift
-    ;;
-    *)
-    break
-    ;;
-esac
-
-done
-
-if [ ! -z "$lockfile" ]; then
-
-  echo "lockfile: $lockfile"
-  while [[ -f "$lockfile" ]]; do
-    echo "Waiting"
-    sleep 5
-  done
-
-  touch "$lockfile"
-fi
-
-if [ ! -f "$comskipini" ]; then
-  echo "output_edl=1" > "$comskipini"
-elif ! grep -q "output_edl=1" "$comskipini"; then
-  echo "output_edl=1" >> "$comskipini"
-fi
-
-echo "Backing up file $infile..." >>/dvr/dvr.log
-time cp "$1" /dvr/backup >>/dvr/dvr.log
-echo "Sleeping for $RAND seconds..." >>/dvr/dvr.log
-sleep $RAND
-
-infile=$1
-tsfile=$1
-outfile=$infile
-
-if [[ -z "$2" ]]; then
-  outfile="$infile"
+if [ -a "$processing" ]
+then
+    echo $(date) "...Processing file exists, run in progress, aborting" >> $log
 else
-  outfile="$2"
+    if [ -a "$ondeck" ]
+    then
+        echo $(date) "...Moving ondeck to processing" >> $log
+        mv -f $ondeck $processing &>> $log
+
+        #read in list of files to process
+        while IFS='' read -u 42 -r line || [[ -n "$line" ]]; do
+            echo $(date) "...Processing $line" >> $log
+            file=`find "$dvrhome" -iname "$line"`
+
+            if [ -a "$file" ]
+
+            newfile="${file%.*}.mkv"
+            dir=`mktemp -d -p $dvrhome`
+            filename=$line
+            edlfile="$dir/${filename%.*}.edl"
+            ccnofile="$dir/${filename%.*}.ccno"
+            metafile="$dir/${filename%.*}.ffmeta"
+            cskipfile="$dir/${filename%.*}-cskip.ts"
+            outmkv="$dir/${filename%.*}.mkv"
+
+            then
+                echo $(date) "...Found $file" >> $log
+
+                # backup the file
+                echo $(date) "...Backing up $file" >> $log
+#               cp -f "$file" /backup/  &>> $templog
+
+                #generate commercial file
+                echo $(date) "...Running Comskip on $dir" >> $log
+                comskip --output=$dir --ini="$comskipini" "$file" &>> $templog
+
+                let start=i=totalcutduration=0
+                hascommercials=false
+                concat=""
+                tempfiles=()
+
+                echo ";FFMETADATA1" > "$metafile"
+                while IFS=$'\t' read -r -a line
+                do
+                  ((i++))
+
+                  end="${line[0]}"
+                  duration=`echo "$end" - "$start" | bc | awk '{printf "%f", $0}'`
+                  startnext="${line[1]}"
+
+                  hascommercials=true
+
+                  echo [CHAPTER] >> "$metafile"
+                  echo TIMEBASE=1/1000 >> "$metafile"
+                  echo START=`echo "($start - $totalcutduration) * 1000" | bc | awk '{printf "%i", $0}'` >> "$metafile"
+                  echo END=`echo "($end - $totalcutduration) * 1000" | bc | awk '{printf "%i", $0}'` >> "$metafile"
+
+                  chapterfile="$dir/${filename%.*}.part-$i.ts"
+                  tempfiles+=("$chapterfile")
+                  concat="$concat|$chapterfile"
+
+                  ffmpeg -nostdin -i "$file" -ss "$start" -t "$duration" -c copy -y "$chapterfile"  &>> $templog
+
+                  totalcutduration=`echo "$totalcutduration" + "$startnext" - "$end" | bc`
+                  start=$startnext
+                done < "$edlfile"
+
+                if $hascommercials ; then
+                  ffmpeg -nostdin -i "$metafile" -i "concat:${concat:1}" -c copy -map_metadata 0 -y "$cskipfile"  &>> $templog
+                fi
+
+                #convert
+                echo $(date) "...Running Handbrake" >> $log
+#               ffmpeg -fflags +genpts -i "$cskipfile" -c:v libx264 -c:a ac3 -preset fast -crf 12 "$outmkv"  &>> $templog
+
+                ffmpeg -fflags +genpts -i "$cskipfile" -c:v copy -c:a copy -preset superfast -sn -movflags faststart "$outmkv"  &>> $templog
+
+
+                #move back so plex can continue
+                echo $(date) "...Moving $outmkv to $newfile" >> $log
+                if mv -f "$outmkv" "$newfile" &>> $templog
+                then
+                    rm "$file" &>> $templog
+                fi
+            else
+                echo $(date) "...No file found. Skipping $line" >> $log
+            fi
+
+            echo "...Cleanup" >> $log
+            rm -rf $dir &>> $templog
+            chown -R dvr: $dvrhome
+
+        done 42< "$processing"
+        rm $processing &>> $templog
+    else
+        echo $(date) "...No shows ondeck, aborting" >> $log
+    fi
 fi
 
-outdir=$(dirname "$outfile")
-
-outextension="${outfile##*.}"
-comskipoutput=""
-
-if [[ ! -z "$workdir" ]]; then
-  case "$workdir" in
-    */)
-      ;;
-    *)
-      comskipoutput="--output=$workdir"
-      workdir="$workdir/"
-      ;;
-  esac
-fi
-
-edlfile="$workdir${infile%.*}.edl"
-metafile="$workdir${infile%.*}.ffmeta"
-logfile="$workdir${infile%.*}.log"
-logofile="$workdir${infile%.*}.logo.txt"
-txtfile="$workdir${infile%.*}.txt"
-outmkv="${outfile%.*}.mkv"
-
-echo "Demuxing file $outfile..." >>/dvr/dvr.log
-ffmpeg -fflags +genpts -i "$infile" -c:v copy -c:a:0 copy -c:s copy "$outmkv"
-echo "Sleeping for $RAND seconds..." >>/dvr/dvr.log
-sleep $RAND
-
-infile=$outmkv
-outfile=$outmkv
-
-if [ ! -f "$edlfile" ]; then
-  $comskipPath $comskipoutput --ini="$comskipini" "$infile"
-fi
-
-start=0
-i=0
-hascommercials=false
-
-concat=""
-
-tempfiles=()
-totalcutduration=0
-
-echo ";FFMETADATA1" > "$metafile"
-# Reads in from $edlfile, see end of loop.
-while IFS=$'\t' read -r -a line
-do
-  ((i++))
-
-  end="${line[0]}"
-  duration=`echo "$end" - "$start" | bc | awk '{printf "%f", $0}'`
-  startnext="${line[1]}"
-
-  hascommercials=true
-
-  echo [CHAPTER] >> "$metafile"
-  echo TIMEBASE=1/1000 >> "$metafile"
-  echo START=`echo "($start - $totalcutduration) * 1000" | bc | awk '{printf "%i", $0}'` >> "$metafile"
-  echo END=`echo "($end - $totalcutduration) * 1000" | bc | awk '{printf "%i", $0}'` >> "$metafile"
-
-  chapterfile="${infile%.*}.part-$i.ts"
-
-  if [[ ! -z "$workdir" ]]; then
-    chapterfile=`basename "$chapterfile"`
-    chapterfile="$workdir$chapterfile"
-  fi
-
-  tempfiles+=("$chapterfile")
-  concat="$concat|$chapterfile"
-
-  $ffmpegPath -nostdin -i "$infile" -ss "$start" -t "$duration" -c copy -y "$chapterfile"
-
-  totalcutduration=`echo "$totalcutduration" + "$startnext" - "$end" | bc`
-  start=$startnext
-done < "$edlfile"
-
-if $hascommercials ; then
-  $ffmpegPath -nostdin -i "$metafile" -i "concat:${concat:1}" -c copy -map_metadata 0 -y "$outfile"
-fi
-
-for i in "${tempfiles[@]}"
-do
-  rm "$i"
-done
-
-
-#>&$"$tsfile"
-#cp -f "$outmkv" /dvr/Shows
-rm -f "$tsfile"
-
-
-if $deleteedl ; then
-  if [ -f "$edlfile" ] ; then
-    rm "$edlfile";
-  fi
-fi
-
-if $deletemeta ; then
-  if [ -f "$metafile" ]; then
-    rm "$metafile";
-  fi
-fi
-
-if $deletelog ; then
-  if [ -f "$logfile" ]; then
-    rm "$logfile";
-  fi
-fi
-
-if $deletelogo ; then
-  if [ -f "$logofile" ]; then
-    rm "$logofile";
-  fi
-fi
-
-if $deletetxt ; then
-  if [ -f "$txtfile" ]; then
-    rm "$txtfile";
-  fi
-fi
-
-if [ ! -z $ldPath ] ; then
-  export LD_LIBRARY_PATH="$ldPath"
-fi
-
-if [ ! -z "$lockfile" ]; then
-  rm "$lockfile"
-fi
+echo $(date) "Convert run complete!" >> $log
