@@ -7,7 +7,7 @@ fi
 
 #vars
 file=$(basename "$1")
-logfile="/dvr/tmp/plexPost.log"
-ondeck="/dvr/tmp/ondeck"
+logfile="/data/tmp/plexPost.log"
+ondeck="/data/tmp/ondeck"
 echo $(date) "Adding '$file' to ondeck list..." >> $logfile
 echo $file >> $ondeck
