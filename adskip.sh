@@ -1,11 +1,11 @@
 #!/bin/bash
 
-templog="/dvr/tmp/run.log"
-log="/dvr/tmp/tv.log"
-ondeck="/dvr/tmp/ondeck"
-processing="/dvr/tmp/processing"
-dvrhome="/dvr"
-comskipini="/dvr/bin/comskip.ini"
+templog="/data/tmp/run.log"
+log="/data/tmp/tv.log"
+ondeck="/data/tmp/ondeck"
+processing="/data/tmp/processing"
+dvrhome="/data"
+comskipini="/opt/adskip/comskip.ini"
 
 echo "Init log" > $templog
 
@@ -101,7 +101,7 @@ else
 
             echo "...Cleanup" >> $log
             rm -rf $dir &>> $templog
-            chown -R dvr: $dvrhome
+            chown -R plex: $dvrhome
 
         done 42< "$processing"
         rm $processing &>> $templog
