@@ -1,10 +1,10 @@
 #!/bin/bash
 
-templog="/data/tmp/run.log"
-log="/data/tmp/tv.log"
-ondeck="/data/tmp/ondeck"
-processing="/data/tmp/processing"
-dvrhome="/archive"
+templog="/config/tmp/run.log"
+log="/config/tmp/tv.log"
+ondeck="/config/tmp/ondeck"
+processing="/config/tmp/processing"
+dvrhome="/dvr"
 comskipini="/opt/adskip/comskip.ini"
 
 echo "Init log" > $templog
