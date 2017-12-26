@@ -10,5 +10,6 @@ file=$(basename "$1")
 logfile="/config/tmp/plexPost.log"
 ondeck="/config/tmp/ondeck"
 mkdir /config/tmp >&/dev/null
+chmod -R 777 config/tmp
 echo $(date) "Adding '$file' to ondeck list..." >> $logfile
 echo $file >> $ondeck
