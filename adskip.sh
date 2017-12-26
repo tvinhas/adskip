@@ -4,7 +4,7 @@ templog="/data/tmp/run.log"
 log="/data/tmp/tv.log"
 ondeck="/data/tmp/ondeck"
 processing="/data/tmp/processing"
-dvrhome="/data"
+dvrhome="/archive"
 comskipini="/opt/adskip/comskip.ini"
 
 echo "Init log" > $templog
