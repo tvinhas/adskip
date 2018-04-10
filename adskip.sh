@@ -37,7 +37,7 @@ if [ ! -z "$processing" ]; then
 fi
 
 newfile="${infile%.*}.mkv"
-dir=`mktemp -d -p $dvrhome`
+dir=`mktemp -p -d $dvrhome`
 edlfile="$dir/${file%.*}.edl"
 ccnofile="$dir/${file%.*}.ccno"
 metafile="$dir/${file%.*}.ffmeta"
